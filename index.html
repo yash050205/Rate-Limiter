@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Limiter Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body { background-color: #f8f9fa; padding: 2rem; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: none; }
+    </style>
+</head>
+<body>
+    <div class="container max-w-4xl">
+        <h2 class="mb-4 text-primary">API Traffic Monitor</h2>
+        
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card p-4">
+                    <h5>Simulation Controls</h5>
+                    <div class="mb-3">
+                        <label class="form-label">Client API Key</label>
+                        <input type="text" id="clientKey" class="form-control" value="demo_user_1">
+                    </div>
+                    <button id="startBtn" class="btn btn-success me-2" onclick="startTraffic()">Start Traffic (10 req/sec)</button>
+                    <button id="stopBtn" class="btn btn-danger" onclick="stopTraffic()" disabled>Stop Traffic</button>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-4 h-100 bg-dark text-white">
+                    <h5>Live Metrics</h5>
+                    <div class="d-flex justify-content-between mt-3">
+                        <div>
+                            <h6 class="text-muted">Allowed (200)</h6>
+                            <h2 id="allowedCount" class="text-success">0</h2>
+                        </div>
+                        <div>
+                            <h6 class="text-muted">Denied (429)</h6>
+                            <h2 id="deniedCount" class="text-danger">0</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-4">
+            <canvas id="trafficChart" height="100"></canvas>
+        </div>
+    </div>
+    <script>
+    let intervalId = null;
+        let lastTotalAllowed = 0;
+        let lastTotalDenied = 0;
+        // Setup Chart.js (Upgraded to Stacked Bar Chart)
+        const ctx = document.getElementById('trafficChart').getContext('2d');
+        const trafficChart = new Chart(ctx, {
+            type: 'bar', // Changed from line to bar
+            data: {
+                labels: Array(20).fill(''),
+                datasets: [
+                    { 
+                        label: 'Allowed (Global)', 
+                        backgroundColor: '#198754', // Solid green fill
+                        data: Array(20).fill(0) 
+                    },
+                    { 
+                        label: 'Denied (Global)', 
+                        backgroundColor: '#dc3545', // Solid red fill
+                        data: Array(20).fill(0) 
+                    }
+                ]
+            },
+            options: { 
+                animation: false, 
+                responsive: true,
+                scales: { 
+                    x: { 
+                        stacked: true, // This stacks the bars on top of each other
+                        grid: { display: false } 
+                    },
+                    y: { 
+                        stacked: true, 
+                        beginAtZero: true,
+                        suggestedMax: 10
+                    } 
+                } 
+            }
+        });
+
+        // 1. The Global Poller (Runs constantly to fetch server truth)
+        window.chartUpdater = setInterval(async () => {
+            try {
+                const res = await fetch('http://localhost:8080/api/metrics');
+                const data = await res.json();
+                
+                // Calculate how many requests happened in the LAST SECOND
+                const allowedThisSecond = data.allowed - lastTotalAllowed;
+                const deniedThisSecond = data.denied - lastTotalDenied;
+
+                // Update UI Numbers
+                document.getElementById('allowedCount').innerText = allowedThisSecond;
+                document.getElementById('deniedCount').innerText = deniedThisSecond;
+                
+                // Update Chart
+                const chartData = trafficChart.data;
+                chartData.datasets[0].data.shift();
+                chartData.datasets[0].data.push(allowedThisSecond);
+                chartData.datasets[1].data.shift();
+                chartData.datasets[1].data.push(deniedThisSecond);
+                trafficChart.update();
+                
+                // Save current totals for the next math calculation
+                lastTotalAllowed = data.allowed;
+                lastTotalDenied = data.denied;
+            } catch (e) {
+                console.error("Waiting for server...");
+            }
+        }, 1000);
+
+        // 2. The Traffic Generator (Just fires requests blindly)
+        async function fireRequest() {
+            const key = document.getElementById('clientKey').value;
+            fetch(`http://localhost:8080/api/check?client_key=${key}`).catch(()=> { /* ignore errors */ });
+        }
+
+        function startTraffic() {
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            intervalId = setInterval(fireRequest, 100); // 10 req/sec
+        }
+
+        function stopTraffic() {
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            clearInterval(intervalId);
+        }
+    </script>
+</body>
+</html>
