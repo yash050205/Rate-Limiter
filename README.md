@@ -24,7 +24,6 @@ It includes an asynchronous persistence layer for crash recovery and a real-time
 
 ### 1. Start the Server
 Compile and run the main server file. It will spin up on `localhost:8080`.
-```bash
 javac RateLimiterServer.java
 java RateLimiterServer
 2. Open the Dashboard
